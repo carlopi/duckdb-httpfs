@@ -1,11 +1,14 @@
 #include "httpfs_client.hpp"
 #include "http_state.hpp"
 
+#ifndef EMSCRIPTEN
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "httplib.hpp"
+#endif
 
 namespace duckdb {
 
+#ifndef EMSCRIPTEN
 class HTTPFSClient : public HTTPClient {
 public:
 	HTTPFSClient(HTTPFSParams &http_params, const string &proto_host_port) {
@@ -159,6 +162,19 @@ unordered_map<string, string> HTTPFSUtil::ParseGetParameters(const string &text)
 	}
 	return result;
 }
+#else
+
+unique_ptr<HTTPClient> HTTPFSUtil::InitializeClient(HTTPParams &http_params, const string &proto_host_port) {
+	return nullptr;
+}
+
+unordered_map<string, string> HTTPFSUtil::ParseGetParameters(const string &text) {
+	unordered_map<string, string> result;
+	//TODO: Implement
+	return result;
+}
+
+#endif // EMSCRIPTEN
 
 string HTTPFSUtil::GetName() const {
 	return "HTTPFS";
