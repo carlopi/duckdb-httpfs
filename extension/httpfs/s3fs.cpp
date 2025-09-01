@@ -75,7 +75,7 @@ static HTTPHeaders create_s3_header(string url, string query, string host, strin
 	hash_str canonical_request_hash_str;
 	if (content_type.length() > 0) {
 		signed_headers += "content-type;";
-		res["content-type"] = content_type;
+		res["Content-Type"] = content_type;
 	}
 	signed_headers += "host;x-amz-content-sha256;x-amz-date";
 	if (auth_params.session_token.length() > 0) {
@@ -723,19 +723,19 @@ unique_ptr<HTTPResponse> S3FileSystem::PutRequest(FileHandle &handle, string url
 	auto auth_params = handle.Cast<S3FileHandle>().auth_params;
 	auto parsed_s3_url = S3UrlParse(url, auth_params);
 	string http_url = parsed_s3_url.GetHTTPUrl(auth_params, http_params);
-	auto content_type = "application/octet-stream";
 
 	HTTPHeaders headers;
 	if (IsGCSRequest(url) && !auth_params.oauth2_bearer_token.empty()) {
 		// Use bearer token for GCS
 		headers["Authorization"] = "Bearer " + auth_params.oauth2_bearer_token;
 		headers["Host"] = parsed_s3_url.host;
+		auto content_type = "application/octet-stream";
 		headers["Content-Type"] = content_type;
 	} else {
 		// Use existing S3 authentication
 		auto payload_hash = GetPayloadHash(buffer_in, buffer_in_len);
 		headers = create_s3_header(parsed_s3_url.path, http_params, parsed_s3_url.host, "s3", "PUT", auth_params, "",
-		                           "", payload_hash, content_type);
+		                          "", payload_hash, "");
 	}
 
 	return HTTPFileSystem::PutRequest(handle, http_url, headers, buffer_in, buffer_in_len);
