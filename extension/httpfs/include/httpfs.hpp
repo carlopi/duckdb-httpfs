@@ -61,6 +61,7 @@ public:
 	idx_t length;
 	time_t last_modified;
 	string etag;
+	bool force_full_download;
 	bool initialized = false;
 	
 	bool auto_fallback_to_full_file_download = true;

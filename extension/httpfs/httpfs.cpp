@@ -23,13 +23,9 @@ namespace duckdb {
 
 shared_ptr<HTTPUtil> HTTPFSUtil::GetHTTPUtil(optional_ptr<FileOpener> opener) {
 	if (opener) {
-		auto db = opener->TryGetDatabase();
-		if (db) {
-			auto &config = DBConfig::GetConfig(*db);
-			return config.http_util;
-		}
+		return opener->GetHTTPUtil();
 	}
-	return make_shared_ptr<HTTPFSUtil>();
+	throw InternalException("FileOpener not provided, can't get HTTPUtil");
 }
 
 unique_ptr<HTTPParams> HTTPFSUtil::InitializeParameters(optional_ptr<FileOpener> opener,
@@ -281,7 +277,8 @@ void TimestampToTimeT(timestamp_t timestamp, time_t &result) {
 HTTPFileHandle::HTTPFileHandle(FileSystem &fs, const OpenFileInfo &file, FileOpenFlags flags,
                                unique_ptr<HTTPParams> params_p)
     : FileHandle(fs, file.path, flags), params(std::move(params_p)), http_params(params->Cast<HTTPFSParams>()),
-      flags(flags), length(0), buffer_available(0), buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0) {
+      flags(flags), length(0), force_full_download(false), buffer_available(0), buffer_idx(0), file_offset(0),
+      buffer_start(0), buffer_end(0) {
 	// check if the handle has extended properties that can be set directly in the handle
 	// if we have these properties we don't need to do a head request to obtain them later
 	if (file.extended_info) {
@@ -297,6 +294,10 @@ HTTPFileHandle::HTTPFileHandle(FileSystem &fs, const OpenFileInfo &file, FileOpe
 		auto fs_entry = info.find("file_size");
 		if (fs_entry != info.end()) {
 			length = fs_entry->second.GetValue<uint64_t>();
+		}
+		auto force_full_download_entry = info.find("force_full_download");
+		if (force_full_download_entry != info.end()) {
+			force_full_download = force_full_download_entry->second.GetValue<bool>();
 		}
 		if (lm_entry != info.end() && etag_entry != info.end() && fs_entry != info.end()) {
 			// we found all relevant entries (last_modified, etag and file size)
@@ -593,7 +594,7 @@ void HTTPFileHandle::FullDownload(HTTPFileSystem &hfs, bool &should_write_cache)
 		// Try to fully download the file first
 		const auto full_download_result = hfs.GetRequest(*this, path, {});
 		if (full_download_result->status != HTTPStatusCode::OK_200) {
-			throw HTTPException(*full_download_result, "Full download failed to to URL \"%s\": %s (%s)",
+			throw HTTPException(*full_download_result, "Full download failed to to URL \"%s\": %d (%s)",
 			                    full_download_result->url, static_cast<int>(full_download_result->status),
 			                    full_download_result->GetError());
 		}
@@ -656,8 +657,8 @@ optional_idx TryParseContentLength(const HTTPHeaders &headers) {
 }
 
 void HTTPFileHandle::LoadFileInfo() {
-	if (initialized) {
-		// already initialized
+	if (initialized || force_full_download) {
+		// already initialized or we specifically do not want to perform a head request and just run a direct download
 		return;
 	}
 	auto &hfs = file_system.Cast<HTTPFileSystem>();
@@ -759,7 +760,7 @@ void HTTPFileHandle::Initialize(optional_ptr<FileOpener> opener) {
 	LoadFileInfo();
 
 	if (flags.OpenForReading()) {
-		if (http_params.state && length == 0) {
+		if ((http_params.state && length == 0) || force_full_download) {
 			FullDownload(hfs, should_write_cache);
 		}
 		if (should_write_cache) {
@@ -801,4 +802,9 @@ void HTTPFileHandle::StoreClient(unique_ptr<HTTPClient> client) {
 HTTPFileHandle::~HTTPFileHandle() {
 	DUCKDB_LOG_FILE_SYSTEM_CLOSE((*this));
 };
+
+string HTTPFSUtil::GetName() const {
+	return "HTTPFS";
+}
+
 } // namespace duckdb
