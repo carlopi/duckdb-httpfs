@@ -7,6 +7,7 @@
 #include "duckdb/common/http_util.hpp"
 #include "duckdb/common/thread.hpp"
 #include "duckdb/common/types/hash.hpp"
+#include "duckdb/common/types/time.hpp"
 #include "duckdb/function/scalar/strftime_format.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/main/client_context.hpp"
@@ -48,6 +49,8 @@ unique_ptr<HTTPParams> HTTPFSUtil::InitializeParameters(optional_ptr<FileOpener>
 	FileOpener::TryGetCurrentSetting(opener, "http_retry_wait_ms", result->retry_wait_ms, info);
 	FileOpener::TryGetCurrentSetting(opener, "http_retry_backoff", result->retry_backoff, info);
 	FileOpener::TryGetCurrentSetting(opener, "http_keep_alive", result->keep_alive, info);
+	FileOpener::TryGetCurrentSetting(opener, "enable_curl_server_cert_verification", result->enable_curl_server_cert_verification,
+	                                 info);
 	FileOpener::TryGetCurrentSetting(opener, "enable_server_cert_verification", result->enable_server_cert_verification,
 	                                 info);
 	FileOpener::TryGetCurrentSetting(opener, "ca_cert_file", result->ca_cert_file, info);
@@ -261,19 +264,6 @@ unique_ptr<HTTPResponse> HTTPFileSystem::GetRangeRequest(FileHandle &handle, str
 	return response;
 }
 
-void TimestampToTimeT(timestamp_t timestamp, time_t &result) {
-	auto components = Timestamp::GetComponents(timestamp);
-	struct tm tm {};
-	tm.tm_year = components.year - 1900;
-	tm.tm_mon = components.month - 1;
-	tm.tm_mday = components.day;
-	tm.tm_hour = components.hour;
-	tm.tm_min = components.minute;
-	tm.tm_sec = components.second;
-	tm.tm_isdst = 0;
-	result = mktime(&tm);
-}
-
 HTTPFileHandle::HTTPFileHandle(FileSystem &fs, const OpenFileInfo &file, FileOpenFlags flags,
                                unique_ptr<HTTPParams> params_p)
     : FileHandle(fs, file.path, flags), params(std::move(params_p)), http_params(params->Cast<HTTPFSParams>()),
@@ -285,7 +275,7 @@ HTTPFileHandle::HTTPFileHandle(FileSystem &fs, const OpenFileInfo &file, FileOpe
 		auto &info = file.extended_info->options;
 		auto lm_entry = info.find("last_modified");
 		if (lm_entry != info.end()) {
-			TimestampToTimeT(lm_entry->second.GetValue<timestamp_t>(), last_modified);
+			last_modified = lm_entry->second.GetValue<timestamp_t>();
 		}
 		auto etag_entry = info.find("etag");
 		if (etag_entry != info.end()) {
@@ -345,6 +335,11 @@ unique_ptr<FileHandle> HTTPFileSystem::OpenFileExtended(const OpenFileInfo &file
 	}
 
 	auto handle = CreateHandle(file, flags, opener);
+
+	if (flags.OpenForWriting() && !flags.OpenForAppending() && !flags.OpenForReading()) {
+		handle->write_overwrite_mode = true;
+	}
+
 	handle->Initialize(opener);
 
 	DUCKDB_LOG_FILE_SYSTEM_OPEN((*handle));
@@ -524,7 +519,7 @@ int64_t HTTPFileSystem::GetFileSize(FileHandle &handle) {
 	return sfh.length;
 }
 
-time_t HTTPFileSystem::GetLastModifiedTime(FileHandle &handle) {
+timestamp_t HTTPFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	auto &sfh = handle.Cast<HTTPFileHandle>();
 	return sfh.last_modified;
 }
@@ -607,20 +602,14 @@ void HTTPFileHandle::FullDownload(HTTPFileSystem &hfs, bool &should_write_cache)
 	}
 }
 
-bool HTTPFileSystem::TryParseLastModifiedTime(const string &timestamp, time_t &result) {
+bool HTTPFileSystem::TryParseLastModifiedTime(const string &timestamp, timestamp_t &result) {
 	StrpTimeFormat::ParseResult parse_result;
 	if (!StrpTimeFormat::TryParse("%a, %d %h %Y %T %Z", timestamp, parse_result)) {
 		return false;
 	}
-	struct tm tm {};
-	tm.tm_year = parse_result.data[0] - 1900;
-	tm.tm_mon = parse_result.data[1] - 1;
-	tm.tm_mday = parse_result.data[2];
-	tm.tm_hour = parse_result.data[3];
-	tm.tm_min = parse_result.data[4];
-	tm.tm_sec = parse_result.data[5];
-	tm.tm_isdst = 0;
-	result = mktime(&tm);
+	if (!parse_result.TryToTimestamp(result)) {
+		return false;
+	}
 	return true;
 }
 
@@ -661,6 +650,14 @@ void HTTPFileHandle::LoadFileInfo() {
 		// already initialized or we specifically do not want to perform a head request and just run a direct download
 		return;
 	}
+
+	// In write_overwrite_mode we dgaf about the size, so no head request is needed
+	if (write_overwrite_mode) {
+		length = 0;
+		initialized = true;
+		return;
+	}
+
 	auto &hfs = file_system.Cast<HTTPFileSystem>();
 	auto res = hfs.HeadRequest(*this, path, {});
 	if (res->status != HTTPStatusCode::OK_200) {
