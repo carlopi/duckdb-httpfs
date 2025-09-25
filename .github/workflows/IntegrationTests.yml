@@ -86,3 +86,4 @@ jobs:
           source ./scripts/run_s3_test_server.sh
           source ./scripts/set_s3_test_server_variables.sh
           ./build/release/test/unittest "*" --skip-error-messages "[]"
+          ./build/release/test/unittest --skip-error-messages "[]" --test-dir duckdb --test-config test/configs/duckdb-tests.json --data-location "s3://test-bucket-duckdb"
