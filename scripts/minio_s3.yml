@@ -69,7 +69,7 @@ services:
         # small file upload
         /usr/bin/mc cp /duckdb/data/csv/phonenumbers.csv myminio/test-bucket/presigned/phonenumbers.csv
         /usr/bin/mc cp /duckdb/data/parquet-testing/glob/t1.parquet myminio/test-bucket/presigned/t1.parquet
-        /usr/bin/mc cp -r /duckdb/data myminio/test-bucket-duckdb/.
+        /usr/bin/mc cp --recursive /duckdb/data/ myminio/test-bucket-duckdb/
 
         # large file upload
         /usr/bin/mc cp /duckdb/test_data/presigned-url-lineitem.parquet myminio/test-bucket/presigned/lineitem_large.parquet
