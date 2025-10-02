@@ -1,0 +1,17 @@
+# name: test/sql/httpfs/examples_from_the_wild.test
+# description: Ensure some weird servers are still reachable
+# group: [httpfs]
+
+require parquet
+
+require httpfs
+
+### not default region just works
+statement ok
+SELECT DISTINCT
+        subtype, class
+    FROM read_parquet(
+        's3://overturemaps-us-west-2/release/2025-09-24.0/theme=base/type=infrastructure/*',
+        hive_partitioning=false
+    )
+    ORDER BY ALL
