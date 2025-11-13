@@ -154,6 +154,76 @@ unique_ptr<HTTPClient> HTTPFSUtil::InitializeClient(HTTPParams &http_params, con
 	return std::move(client);
 }
 
+unique_ptr<HTTPResponse> HTTPFSUtil::SendRequest(BaseRequest &request, unique_ptr<HTTPClient> &client) {
+
+	static std::pair<unique_ptr<HTTPClient>, string> park_my_client[10];
+	static std::mutex my_mutex;
+
+	//      if (!client) {
+	// if (!client && !StringUtil::EndsWith(request.url, "t"))
+	if (my_mutex.try_lock()) {
+		//                 std::unique_lock<std::mutex> lock(my_mutex);
+
+		for (int i = 0; i < 10; i++) {
+			if (park_my_client[i].second == request.proto_host_port && park_my_client[i].first) {
+				std::cout << "got one!\n";
+				client = std::move(park_my_client[i].first);
+				i = 10;
+			}
+		}
+		if (!client) {
+			client = InitializeClient(request.params, request.proto_host_port);
+		}
+		my_mutex.unlock();
+	}
+
+	std::function<unique_ptr<HTTPResponse>(void)> on_request([&]() {
+		unique_ptr<HTTPResponse> response;
+
+		// When logging is enabled, we collect request timings
+		if (request.params.logger) {
+			request.have_request_timing = request.params.logger->ShouldLog(HTTPLogType::NAME, HTTPLogType::LEVEL);
+		}
+
+		try {
+			if (request.have_request_timing) {
+				request.request_start = Timestamp::GetCurrentTimestamp();
+			}
+			response = client->Request(request);
+		} catch (...) {
+			if (request.have_request_timing) {
+				request.request_end = Timestamp::GetCurrentTimestamp();
+			}
+			LogRequest(request, nullptr);
+			throw;
+		}
+		if (request.have_request_timing) {
+			request.request_end = Timestamp::GetCurrentTimestamp();
+		}
+		LogRequest(request, response ? response.get() : nullptr);
+		return response;
+	});
+
+	// Refresh the client on retries
+	std::function<void(void)> on_retry([&]() { client = InitializeClient(request.params, request.proto_host_port); });
+
+	auto r = RunRequestWithRetry(on_request, request, on_retry);
+	if (my_mutex.try_lock()) {
+		// std::unique_lock<std::mutex> lock(my_mutex);
+		for (int i = 0; i < 10; i++) {
+			if (!park_my_client[i].first) {
+				std::cout << "save one!\n";
+				client->Initialize(request.params);
+				park_my_client[i].first = std::move(client);
+				park_my_client[i].second = request.proto_host_port;
+				i = 10;
+			}
+		}
+		my_mutex.unlock();
+	}
+	return std::move(r);
+}
+
 unordered_map<string, string> HTTPFSUtil::ParseGetParameters(const string &text) {
 	duckdb_httplib_openssl::Params query_params;
 	duckdb_httplib_openssl::detail::parse_query_text(text, query_params);

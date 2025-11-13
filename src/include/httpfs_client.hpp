@@ -36,6 +36,7 @@ public:
 	unique_ptr<HTTPParams> InitializeParameters(optional_ptr<FileOpener> opener,
 	                                            optional_ptr<FileOpenerInfo> info) override;
 	unique_ptr<HTTPClient> InitializeClient(HTTPParams &http_params, const string &proto_host_port) override;
+	virtual unique_ptr<HTTPResponse> SendRequest(BaseRequest &request, unique_ptr<HTTPClient> &client) override;
 
 	static unordered_map<string, string> ParseGetParameters(const string &text);
 	static shared_ptr<HTTPUtil> GetHTTPUtil(optional_ptr<FileOpener> opener);
