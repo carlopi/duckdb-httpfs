@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb/common/http_util.hpp"
+#include <mutex>
 
 namespace duckdb {
 class HTTPLogger;
