@@ -31,6 +31,12 @@ struct HTTPFSParams : public HTTPParams {
 	// TODO: make this unnecessary
 };
 
+struct CachedHTTPClient {
+	unique_ptr<HTTPClient> cached_client;
+	string host;
+	uint64_t insertion_time;
+};
+
 class HTTPFSUtil : public HTTPUtil {
 public:
 	unique_ptr<HTTPParams> InitializeParameters(optional_ptr<FileOpener> opener,
@@ -42,6 +48,9 @@ public:
 	static shared_ptr<HTTPUtil> GetHTTPUtil(optional_ptr<FileOpener> opener);
 
 	string GetName() const override;
+
+	std::mutex cached_httpclients_mutex {};
+	std::vector<CachedHTTPClient> cached_httpclients;
 };
 
 class HTTPFSCurlUtil : public HTTPFSUtil {

@@ -156,27 +156,24 @@ unique_ptr<HTTPClient> HTTPFSUtil::InitializeClient(HTTPParams &http_params, con
 
 unique_ptr<HTTPResponse> HTTPFSUtil::SendRequest(BaseRequest &request, unique_ptr<HTTPClient> &client) {
 
-	static std::pair<unique_ptr<HTTPClient>, string> park_my_client[10];
-	static std::mutex my_mutex;
-
-	//      if (!client) {
-	// if (!client && !StringUtil::EndsWith(request.url, "t"))
-	if (my_mutex.try_lock()) {
-		//                 std::unique_lock<std::mutex> lock(my_mutex);
-
-		for (int i = 0; i < 10; i++) {
-			if (park_my_client[i].second == request.proto_host_port && park_my_client[i].first) {
-				std::cout << "got one!\n";
-				client = std::move(park_my_client[i].first);
-				i = 10;
-			}
-		}
+	// if (!client) {
+	{
+		if (!request.proto_host_port.empty())
+			if (GetName() == "HTTPFS")
+				if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
+					for (int i = 0; i < cached_httpclients.size(); i++) {
+						if (cached_httpclients[i].host == request.proto_host_port &&
+						    cached_httpclients[i].cached_client) {
+							client = std::move(cached_httpclients[i].cached_client);
+							client->Initialize(request.params);
+							break;
+						}
+					}
+				}
 		if (!client) {
 			client = InitializeClient(request.params, request.proto_host_port);
 		}
-		my_mutex.unlock();
 	}
-
 	std::function<unique_ptr<HTTPResponse>(void)> on_request([&]() {
 		unique_ptr<HTTPResponse> response;
 
@@ -208,18 +205,24 @@ unique_ptr<HTTPResponse> HTTPFSUtil::SendRequest(BaseRequest &request, unique_pt
 	std::function<void(void)> on_retry([&]() { client = InitializeClient(request.params, request.proto_host_port); });
 
 	auto r = RunRequestWithRetry(on_request, request, on_retry);
-	if (my_mutex.try_lock()) {
-		// std::unique_lock<std::mutex> lock(my_mutex);
-		for (int i = 0; i < 10; i++) {
-			if (!park_my_client[i].first) {
-				std::cout << "save one!\n";
-				client->Initialize(request.params);
-				park_my_client[i].first = std::move(client);
-				park_my_client[i].second = request.proto_host_port;
-				i = 10;
+	if (GetName() == "HTTPFS") {
+		if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
+			if (cached_httpclients.empty()) {
+				cached_httpclients.resize(64);
+			}
+			for (int i = 0; i < cached_httpclients.size(); i++) {
+				if (!cached_httpclients[i].cached_client) {
+					cached_httpclients[i].cached_client = std::move(client);
+					cached_httpclients[i].host = request.proto_host_port;
+					break;
+				}
+			}
+			{
+				int i = rand() % cached_httpclients.size();
+				cached_httpclients[i].cached_client = std::move(client);
+				cached_httpclients[i].host = request.proto_host_port;
 			}
 		}
-		my_mutex.unlock();
 	}
 	return std::move(r);
 }
