@@ -12,7 +12,7 @@ public:
 		Initialize(http_params);
 	}
 	void Initialize(HTTPParams &http_p) override {
-		HTTPFSParams &http_params = (HTTPFSParams&)http_p;
+		HTTPFSParams &http_params = (HTTPFSParams &)http_p;
 		client->set_follow_location(http_params.follow_location);
 		client->set_keep_alive(http_params.keep_alive);
 		if (!http_params.ca_cert_file.empty()) {
@@ -32,14 +32,16 @@ public:
 		}
 
 		if (!http_params.http_proxy.empty()) {
+			proxy_is_set = true;
 			client->set_proxy(http_params.http_proxy, http_params.http_proxy_port);
 
 			if (!http_params.http_proxy_username.empty()) {
 				client->set_proxy_basic_auth(http_params.http_proxy_username, http_params.http_proxy_password);
 			}
 		} else {
+			proxy_is_set = false;
 			client->set_proxy("", -1);
-			client->set_proxy_basic_auth("","");
+			client->set_proxy_basic_auth("", "");
 		}
 		state = http_params.state;
 	}
@@ -154,6 +156,9 @@ private:
 private:
 	unique_ptr<duckdb_httplib_openssl::Client> client;
 	optional_ptr<HTTPState> state;
+
+public:
+	bool proxy_is_set;
 };
 
 unique_ptr<HTTPClient> HTTPFSUtil::InitializeClient(HTTPParams &http_params, const string &proto_host_port) {
@@ -163,20 +168,20 @@ unique_ptr<HTTPClient> HTTPFSUtil::InitializeClient(HTTPParams &http_params, con
 
 unique_ptr<HTTPResponse> HTTPFSUtil::SendRequest(BaseRequest &request, unique_ptr<HTTPClient> &client) {
 
-	// if (!client) {
-	{
-		if (!request.proto_host_port.empty())
-			if (GetName() == "HTTPFS")
-				if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
-					for (int i = 0; i < cached_httpclients.size(); i++) {
-						if (cached_httpclients[i].host == request.proto_host_port &&
-						    cached_httpclients[i].cached_client) {
-							client = std::move(cached_httpclients[i].cached_client);
-							client->Initialize(request.params);
-							break;
+	if (!client) {
+		if (!client || !((HTTPFSClient &)(*client)).proxy_is_set)
+			if (!request.proto_host_port.empty())
+				if (GetName() == "HTTPFS")
+					if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
+						for (int i = 0; i < cached_httpclients.size(); i++) {
+							if (cached_httpclients[i].host == request.proto_host_port &&
+							    cached_httpclients[i].cached_client) {
+								client = std::move(cached_httpclients[i].cached_client);
+								client->Initialize(request.params);
+								break;
+							}
 						}
 					}
-				}
 		if (!client) {
 			client = InitializeClient(request.params, request.proto_host_port);
 		}
@@ -212,25 +217,27 @@ unique_ptr<HTTPResponse> HTTPFSUtil::SendRequest(BaseRequest &request, unique_pt
 	std::function<void(void)> on_retry([&]() { client = InitializeClient(request.params, request.proto_host_port); });
 
 	auto r = RunRequestWithRetry(on_request, request, on_retry);
-	if (GetName() == "HTTPFS") {
-		if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
-			if (cached_httpclients.empty()) {
-				cached_httpclients.resize(64);
-			}
-			for (int i = 0; i < cached_httpclients.size(); i++) {
-				if (!cached_httpclients[i].cached_client) {
-					cached_httpclients[i].cached_client = std::move(client);
-					cached_httpclients[i].host = request.proto_host_port;
-					break;
+	if (!((HTTPFSClient &)(*client)).proxy_is_set)
+		if (!request.proto_host_port.empty())
+			if (GetName() == "HTTPFS") {
+				if (auto lock = std::unique_lock<std::mutex>(cached_httpclients_mutex, std::try_to_lock)) {
+					if (cached_httpclients.empty()) {
+						cached_httpclients.resize(64);
+					}
+					for (int i = 0; i < cached_httpclients.size(); i++) {
+						if (!cached_httpclients[i].cached_client) {
+							cached_httpclients[i].cached_client = std::move(client);
+							cached_httpclients[i].host = request.proto_host_port;
+							break;
+						}
+					}
+					{
+						int i = rand() % cached_httpclients.size();
+						cached_httpclients[i].cached_client = std::move(client);
+						cached_httpclients[i].host = request.proto_host_port;
+					}
 				}
 			}
-			{
-				int i = rand() % cached_httpclients.size();
-				cached_httpclients[i].cached_client = std::move(client);
-				cached_httpclients[i].host = request.proto_host_port;
-			}
-		}
-	}
 	return std::move(r);
 }
 
