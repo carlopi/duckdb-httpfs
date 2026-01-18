@@ -32,6 +32,15 @@ jobs:
       deploy_latest: ${{ startsWith(github.ref, 'refs/heads/v') }}
       deploy_versioned: ${{ startsWith(github.ref, 'refs/heads/v') || github.ref == 'refs/heads/main' }}
 
+  duckdb-debug-build:
+    name: Build extension binaries
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@main
+    with:
+      extension_name: httpfs
+      duckdb_version: 69fb87db14
+      ci_tools_version: main
+      build_type: debug
+
   code-quality:
     name: Code Quality
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_code_quality.yml@main
