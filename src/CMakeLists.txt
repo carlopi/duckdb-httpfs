@@ -1,6 +1,7 @@
 set(HTTPFS_SOURCES
     hffs.cpp
     s3fs.cpp
+    s3_multi_part_upload.cpp
     httpfs.cpp
     http_state.cpp
     crypto.cpp
