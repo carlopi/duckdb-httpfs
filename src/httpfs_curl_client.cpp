@@ -46,6 +46,23 @@ static size_t RequestWriteCallback(void *contents, size_t size, size_t nmemb, vo
 	return totalSize;
 }
 
+struct PutReadState {
+	const char *data;
+	size_t remaining;
+};
+
+static size_t PutReadCallback(char *buffer, size_t size, size_t nitems, void *userdata) {
+	auto *read_state = static_cast<PutReadState *>(userdata);
+	size_t to_copy = std::min(size * nitems, read_state->remaining);
+	if (to_copy == 0) {
+		return 0;
+	}
+	memcpy(buffer, read_state->data, to_copy);
+	read_state->data += to_copy;
+	read_state->remaining -= to_copy;
+	return to_copy;
+}
+
 static size_t RequestHeaderCallback(void *contents, size_t size, size_t nmemb, void *userp) {
 	size_t totalSize = size * nmemb;
 	std::string header(static_cast<char *>(contents), totalSize);
@@ -268,10 +285,10 @@ public:
 		}
 
 		auto curl_headers = TransformHeadersCurl(info.headers, info.params);
-		// Add content type header from info
 		curl_headers.Add("Content-Type: " + info.content_type);
-		// transform parameters
 		request_info->url = info.url;
+
+		PutReadState read_state {const_char_ptr_cast(info.buffer_in), info.buffer_in_len};
 
 		CURLcode res;
 		{
@@ -280,20 +297,25 @@ public:
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
 			curl_easy_setopt(*curl, CURLOPT_CURLU, url);
-			// Perform PUT
-			curl_easy_setopt(*curl, CURLOPT_CUSTOMREQUEST, "PUT");
-			// Include PUT body
-			curl_easy_setopt(*curl, CURLOPT_POSTFIELDS, const_char_ptr_cast(info.buffer_in));
-			curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE, info.buffer_in_len);
 
-			// Apply headers
+			curl_easy_setopt(*curl, CURLOPT_TIMEOUT, 0L);            // no hard timeout for uploads
+			curl_easy_setopt(*curl, CURLOPT_LOW_SPEED_LIMIT, 1024L); // abort if < 1 KB/s...
+			curl_easy_setopt(*curl, CURLOPT_LOW_SPEED_TIME, 30L);    // ...for 30 consecutive seconds
+
+			curl_easy_setopt(*curl, CURLOPT_UPLOAD, 1L);
+			curl_easy_setopt(*curl, CURLOPT_READFUNCTION, PutReadCallback);
+			curl_easy_setopt(*curl, CURLOPT_READDATA, &read_state);
+			curl_easy_setopt(*curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)info.buffer_in_len);
+
 			curl_easy_setopt(*curl, CURLOPT_HTTPHEADER, curl_headers ? curl_headers.headers : nullptr);
 
 			res = curl->Execute();
-			curl_easy_setopt(*curl, CURLOPT_CUSTOMREQUEST, nullptr);
-			curl_easy_setopt(*curl, CURLOPT_POSTFIELDS, nullptr);
-			curl_easy_setopt(*curl, CURLOPT_POSTFIELDSIZE, 0);
+			curl_easy_setopt(*curl, CURLOPT_UPLOAD, 0L);
+			curl_easy_setopt(*curl, CURLOPT_READFUNCTION, nullptr);
+			curl_easy_setopt(*curl, CURLOPT_READDATA, nullptr);
+			curl_easy_setopt(*curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)-1);
 			curl_url_cleanup(url);
+			curl_easy_setopt(*curl, CURLOPT_TIMEOUT, info.params.timeout);
 		}
 
 		curl_easy_getinfo(*curl, CURLINFO_RESPONSE_CODE, &request_info->response_code);
@@ -342,7 +364,6 @@ public:
 		if (state) {
 			state->delete_count++;
 		}
-
 		auto curl_headers = TransformHeadersCurl(info.headers, info.params);
 		// transform parameters
 		request_info->url = info.url;
