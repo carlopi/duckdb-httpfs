@@ -116,8 +116,11 @@ public:
 	HTTPFSCurlClient(HTTPFSParams &http_params, const string &proto_host_port) {
 		base_url = curl_url();
 		int offset = 0;
-		if (StringUtil::StartsWith(proto_host_port, "//")) offset = 1;
-		if (StringUtil::StartsWith(proto_host_port, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(proto_host_port, "//")) offset++;
+		else if (StringUtil::StartsWith(proto_host_port, "./")) offset++;
+		else break;
+		}
 		curl_url_set(base_url, CURLUPART_URL, proto_host_port.c_str() + offset, 0);
 		stored_bearer_token = "";
 		stored_cert_file_path = "";
@@ -222,8 +225,11 @@ public:
 			curl_easy_setopt(*curl, CURLOPT_NOBODY, 0L);
 			CURLU *url = curl_url_dup(base_url);
 		int offset = 0;
-		if (StringUtil::StartsWith(info.path, "//")) offset = 1;
-		if (StringUtil::StartsWith(info.path, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(info.path, "//")) offset++;
+		else if (StringUtil::StartsWith(info.path, "./")) offset++;
+		else break;
+		}
 			curl_url_set(url, CURLUPART_URL, info.path.c_str() + offset, 0);
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
@@ -282,9 +288,11 @@ public:
 		CURLcode res;
 		{
 			CURLU *url = curl_url_dup(base_url);
-		int offset = 0;
-		if (StringUtil::StartsWith(info.path, "//")) offset = 1;
-		if (StringUtil::StartsWith(info.path, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(info.path, "//")) offset++;
+		else if (StringUtil::StartsWith(info.path, "./")) offset++;
+		else break;
+		}
 			curl_url_set(url, CURLUPART_URL, info.path.c_str() + offset, 0);
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
@@ -333,9 +341,11 @@ public:
 			curl_easy_setopt(*curl, CURLOPT_HTTPGET, 0L);
 
 			CURLU *url = curl_url_dup(base_url);
-		int offset = 0;
-		if (StringUtil::StartsWith(info.path, "//")) offset = 1;
-		if (StringUtil::StartsWith(info.path, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(info.path, "//")) offset++;
+		else if (StringUtil::StartsWith(info.path, "./")) offset++;
+		else break;
+		}
 			curl_url_set(url, CURLUPART_URL, info.path.c_str() + offset, 0);
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
@@ -367,9 +377,11 @@ public:
 		CURLcode res;
 		{
 			CURLU *url = curl_url_dup(base_url);
-		int offset = 0;
-		if (StringUtil::StartsWith(info.path, "//")) offset = 1;
-		if (StringUtil::StartsWith(info.path, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(info.path, "//")) offset++;
+		else if (StringUtil::StartsWith(info.path, "./")) offset++;
+		else break;
+		}
 			curl_url_set(url, CURLUPART_URL, info.path.c_str() + offset, 0);
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
@@ -410,9 +422,11 @@ public:
 		CURLcode res;
 		{
 			CURLU *url = curl_url_dup(base_url);
-		int offset = 0;
-		if (StringUtil::StartsWith(info.path, "//")) offset = 1;
-		if (StringUtil::StartsWith(info.path, "./")) offset = 1;
+		while (true) {
+		if (StringUtil::StartsWith(info.path, "//")) offset++;
+		else if (StringUtil::StartsWith(info.path, "./")) offset++;
+		else break;
+		}
 			curl_url_set(url, CURLUPART_URL, info.path.c_str() + offset, 0);
 
 			curl_easy_setopt(*curl, CURLOPT_URL, nullptr);
