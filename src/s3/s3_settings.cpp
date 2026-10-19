@@ -212,6 +212,10 @@ void S3Settings::Register(DBConfig &config) {
 	                          SetScope::SESSION, false, true);
 	config.AddExtensionOption("s3_url_compatibility_mode", "Disable Globs and Query Parameters on S3 URLs",
 	                          LogicalType::BOOLEAN, Value(false), nullptr, SetScope::SESSION, false, true);
+	config.AddExtensionOption(DEPRECATED_URL_PARAMETERS_SETTING,
+	                          "Interpret '?key=value' suffixes on S3 URLs as configuration (e.g. s3_endpoint, "
+	                          "s3_access_key_id) instead of as part of the object key",
+	                          LogicalType::BOOLEAN, Value(false));
 	config.AddExtensionOption("s3_requester_pays", "S3 use requester pays mode", LogicalType::BOOLEAN, Value(false),
 	                          nullptr, SetScope::SESSION, false, true);
 	config.AddExtensionOption("gcs_user_project", "GCS billing project for Requester Pays", LogicalType::VARCHAR,
@@ -260,6 +264,12 @@ void S3Settings::Register(DBConfig &config) {
 void S3Settings::Initialize(DBConfig &config) {
 	auto provider = make_uniq<AWSEnvironmentCredentialsProvider>(config);
 	provider->SetAll();
+}
+
+string S3Settings::DeprecatedURLParametersHint() {
+	return StringUtil::Format("\nS3 URL parameters are disabled by default: '?' and the text following it are part of "
+	                          "the object key. To interpret them as configuration instead, opt in with SET %s = true.",
+	                          DEPRECATED_URL_PARAMETERS_SETTING);
 }
 
 } // namespace duckdb

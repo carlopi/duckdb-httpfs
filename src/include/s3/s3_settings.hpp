@@ -35,9 +35,12 @@ public:
 
 struct S3Settings {
 	static constexpr idx_t DEFAULT_LIST_CONCURRENCY = 256;
+	static constexpr const char *DEPRECATED_URL_PARAMETERS_SETTING = "s3_enable_deprecated_url_parameters";
 
 	static void Register(DBConfig &config);
 	static void Initialize(DBConfig &config);
+	//! Appended to errors about URLs containing '?' while URL parameters are disabled
+	static string DeprecatedURLParametersHint();
 };
 
 } // namespace duckdb

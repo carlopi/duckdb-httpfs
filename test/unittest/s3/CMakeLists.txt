@@ -7,6 +7,7 @@ target_sources(
           s3_retry_test.cpp
           s3_sse_test.cpp
           s3_test_helper.cpp
+          s3_url_parameters_test.cpp
           scheme_alias_isolation_test.cpp
           s3_upload_config_test.cpp
           s3_upload_lifecycle_test.cpp

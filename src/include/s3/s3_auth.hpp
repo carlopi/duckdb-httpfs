@@ -51,6 +51,13 @@ struct S3AuthURLParams {
 	bool compatibility_mode = false;
 	//! The URL's s3_endpoint parameter chose the host, instead of the configuration
 	bool endpoint_from_url = false;
+	//! Legacy opt-in: '?key=value' suffixes on S3 URLs are configuration, not part of the object key
+	bool enable_deprecated_url_parameters = false;
+
+	//! Whether '?' in a URL starts query parameters rather than being part of the object key
+	bool ParseURLParameters() const {
+		return enable_deprecated_url_parameters && !compatibility_mode;
+	}
 
 	bool operator==(const S3AuthURLParams &other) const;
 };
@@ -89,6 +96,7 @@ struct S3AuthConfig {
 	bool use_ssl = true;
 	bool compatibility_mode = false;
 	bool endpoint_from_url = false;
+	bool enable_deprecated_url_parameters = false;
 
 	//! Request headers
 	S3AuthRequestOptions request_options;
@@ -116,6 +124,17 @@ public:
 	template <class TYPE>
 	SettingLookupResult TryGetSecretKey(const Identifier &secret_key, TYPE &value_out) {
 		return reader.TryGetSecretKey(secret_key, value_out);
+	}
+
+	//! Lookup a setting that no secret key overrides
+	template <class TYPE>
+	SettingLookupResult TryGetSetting(const Identifier &setting_name, TYPE &result) {
+		Value temp_result;
+		auto lookup_result = reader.TryGetSecretKeyOrSetting(setting_name, setting_name, temp_result);
+		if (lookup_result && !temp_result.IsNull()) {
+			result = temp_result.GetValue<TYPE>();
+		}
+		return lookup_result;
 	}
 
 	template <class TYPE>

@@ -1,6 +1,7 @@
 #include "s3/s3_auth.hpp"
 
 #include "s3/s3_url.hpp"
+#include "s3/s3_settings.hpp"
 
 #include "duckdb/common/crypto/md5.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -72,7 +73,8 @@ bool S3AuthCredentials::operator==(const S3AuthCredentials &other) const {
 
 bool S3AuthURLParams::operator==(const S3AuthURLParams &other) const {
 	return endpoint == other.endpoint && endpoint_mode == other.endpoint_mode && style == other.style &&
-	       compatibility_mode == other.compatibility_mode && endpoint_from_url == other.endpoint_from_url;
+	       compatibility_mode == other.compatibility_mode && endpoint_from_url == other.endpoint_from_url &&
+	       enable_deprecated_url_parameters == other.enable_deprecated_url_parameters;
 }
 
 bool S3AuthRequestOptions::operator==(const S3AuthRequestOptions &other) const {
@@ -121,6 +123,7 @@ S3AuthConfig S3AuthResolver::ReadConfig(S3KeyValueReader &secret_reader, const s
 	}
 	secret_reader.TryGetSecretKeysOrSetting("url_compatibility_mode", "s3_url_compatibility_mode",
 	                                        "s3_url_compatibility_mode", config.compatibility_mode);
+	secret_reader.TryGetSetting(S3Settings::DEPRECATED_URL_PARAMETERS_SETTING, config.enable_deprecated_url_parameters);
 	secret_reader.TryGetSecretKeyOrSetting("requester_pays", "s3_requester_pays", request_options.requester_pays);
 
 	string endpoint;
@@ -166,6 +169,14 @@ S3URLStyle S3AuthURLParams::ParseStyle(const string &url_style) {
 	                            url_style);
 }
 
+//! Points at the opt-in when a URL carries a '?' suffix that is no longer interpreted
+static string DeprecatedURLParameterHint(const S3AuthConfig &config, const string &file_path) {
+	if (!config.enable_deprecated_url_parameters && !config.compatibility_mode && file_path.find('?') != string::npos) {
+		return S3Settings::DeprecatedURLParametersHint();
+	}
+	return string();
+}
+
 S3AuthParams S3AuthResolver::Resolve(S3AuthConfig config, const string &file_path) {
 	S3Url::ApplyAuthQueryParameters(file_path, config);
 	auto &credentials = config.credentials;
@@ -188,16 +199,18 @@ S3AuthParams S3AuthResolver::Resolve(S3AuthConfig config, const string &file_pat
 	auto style = S3AuthURLParams::ParseStyle(config.url_style);
 	if (config.route.type == S3ProviderType::GCS && request_options.requester_pays &&
 	    request_options.user_project.empty()) {
-		throw InvalidInputException(
-		    "GCS Requester Pays requires a billing project; set USER_PROJECT in the GCS secret, "
-		    "set gcs_user_project, or pass gcs_user_project in the URL.");
+		throw InvalidInputException("GCS Requester Pays requires a billing project; set USER_PROJECT in the GCS "
+		                            "secret or set gcs_user_project.%s",
+		                            DeprecatedURLParameterHint(config, file_path));
 	}
 	if ((config.route.IsAlias() || config.route.type == S3ProviderType::R2) && EndpointIsUnresolved(config.endpoint)) {
 		if (config.route.type == S3ProviderType::R2) {
-			throw IOException("R2 requires an endpoint; provide account_id in the secret or s3_endpoint in the URL");
+			throw IOException("R2 requires an endpoint; provide ACCOUNT_ID or ENDPOINT in the R2 secret.%s",
+			                  DeprecatedURLParameterHint(config, file_path));
 		}
-		throw IOException("An aliased URL scheme requires an endpoint; provide ENDPOINT in the secret, set "
-		                  "s3_endpoint, or pass s3_endpoint in the URL");
+		throw IOException("An aliased URL scheme requires an endpoint; provide ENDPOINT in the secret or set "
+		                  "s3_endpoint.%s",
+		                  DeprecatedURLParameterHint(config, file_path));
 	}
 
 	auto endpoint = NormalizedS3Endpoint::Parse(config.endpoint, config.use_ssl);
@@ -224,8 +237,8 @@ S3AuthParams S3AuthResolver::Resolve(S3AuthConfig config, const string &file_pat
 	S3AuthParams result;
 	result.provider = S3Provider::Resolve(std::move(config.route), endpoint);
 	result.credentials = std::move(credentials);
-	result.url = {std::move(endpoint), config.endpoint_mode, style, config.compatibility_mode,
-	              config.endpoint_from_url};
+	result.url = {std::move(endpoint),       config.endpoint_mode,     style,
+	              config.compatibility_mode, config.endpoint_from_url, config.enable_deprecated_url_parameters};
 	result.request_options = std::move(request_options);
 	result.refresh_identity = {config.use_ssl};
 	if (result.request_options.sse_customer_key) {
