@@ -51,6 +51,7 @@ static void AddDeleteAuthHash(hash_t &result, const S3AuthParams &auth_params) {
 	AddDeleteEnumHash(result, url.endpoint_mode);
 	AddDeleteEnumHash(result, url.style);
 	AddDeleteHash(result, static_cast<idx_t>(url.compatibility_mode));
+	AddDeleteHash(result, static_cast<idx_t>(url.enable_deprecated_url_parameters));
 
 	auto &request_options = auth_params.GetRequestOptions();
 	AddDeleteHash(result, request_options.kms_key_id);

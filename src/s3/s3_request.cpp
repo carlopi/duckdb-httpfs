@@ -2,6 +2,7 @@
 #include "duckdb/main/http/http_retry_budget.hpp"
 
 #include "s3/s3fs.hpp"
+#include "s3/s3_settings.hpp"
 #include "s3/s3_xml_response.hpp"
 #include "create_secret_functions.hpp"
 #include "http/http_state.hpp"
@@ -1071,6 +1072,11 @@ HTTPException S3RequestUtil::GetError(const S3AuthParams &s3_auth_params, const 
 	}
 	if (response.status == HTTPStatusCode::Unauthorized_401 || response.status == HTTPStatusCode::Forbidden_403) {
 		extra_text += s3_auth_params.GetProvider().GetAuthError(s3_auth_params);
+	}
+	auto &url_params = s3_auth_params.GetURLParams();
+	if (!url_params.enable_deprecated_url_parameters && !url_params.compatibility_mode &&
+	    display_url.find('?') != string::npos) {
+		extra_text += S3Settings::DeprecatedURLParametersHint();
 	}
 	return HTTPFSUtil::GetHTTPStatusError(response, request_type, operation, display_url, extra_text);
 }
